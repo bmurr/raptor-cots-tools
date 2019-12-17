@@ -3,7 +3,7 @@
 import sys
 import os
 import struct
-from collections import OrderedDict
+from collections import OrderedDict, Counter
 import argparse
 from PIL import Image
 import numpy as np
@@ -49,6 +49,7 @@ class GLBArchive(object):
 
 
         filelist = OrderedDict()
+        filename_counter = Counter()
         previous_file = None
         for n in range(num_files):
             offset = cls.FAT_ENTRY_LENGTH + n * cls.FAT_ENTRY_LENGTH
@@ -60,11 +61,30 @@ class GLBArchive(object):
                 file = GLBArchiveFile(filename, bool(flags), offset, length)                
                 if previous_file and previous_file.length == 0:
                     previous_file.length = file.offset - previous_file.offset
-                filelist[filename] = file
+                if filename_counter[filename] == 0:
+                    filelist[filename] = file
+                else:
+                    if filelist.get(filename):
+                        if '_' in filename:
+                            base_filename, ext = filename.rsplit('_', 1)
+                            frame_filename = '_'.join(["{}-{}".format(base_filename, 0), ext])
+                        else:
+                            frame_filename = "{}-{}".format(filename, 0)
+                        filelist[frame_filename] = filelist.get(filename)
+                        del(filelist[filename])
+                    count = filename_counter[filename]
+                    if '_' in filename:
+                        base_filename, ext = filename.rsplit('_', 1)
+                        frame_filename = '_'.join(["{}-{}".format(base_filename, count), ext])
+                    else:
+                        frame_filename = "{}-{}".format(filename, count)
+                    filelist[frame_filename] = file
+                filename_counter[filename] += 1
                 previous_file = file
 
             if previous_file and previous_file.length == 0:
                 previous_file.length = len(data) - previous_file.offset
+
 
         r = cls(data, filelist)
         return r
@@ -187,9 +207,9 @@ def archive(args):
         padding = len(sorted(glbfile.files, key=lambda f: len(f))[-1])
         bytes_padding = len(str(sorted(glbfile.files.values(), key=lambda f: len(str(f.length)))[-1].length))
         
-        for filename in glbfile.files:
+        for filename, file in glbfile.files.items():
             byte_count = glbfile.files.get(filename).length
-            print '{name:>{padding}} {bytes:>{bytes_padding}} bytes'.format(name=filename, bytes=byte_count, padding=padding, bytes_padding=bytes_padding)
+            print '{name:>{padding}} {bytes:>{bytes_padding}} bytes@{offset}'.format(name=filename, bytes=byte_count, padding=padding, bytes_padding=bytes_padding, offset=file.offset)
             
     elif args.extract:                            
         archive_name = os.path.basename(archive_name)
@@ -288,7 +308,10 @@ def image(args):
                     i.save(output_path)
                     print "Converting {}".format(input_filename)
                     files_written += 1
-            print "Wrote {} files to {}.".format(files_written, os.path.dirname(output_path))
+            if files_written > 0:
+                print "Wrote {} files to {}.".format(files_written, os.path.dirname(output_path))
+            else:
+                print "Wrote 0 files."
         else:
             exit("Input path is directory but --convert argument was not provided.")
     else:
