@@ -2,6 +2,14 @@
 
 data/
 
+# == Python ignores ==
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
 # Logs
 logs
 *.log
